@@ -263,10 +263,11 @@ var first_poll = true;
 // is being made from the response handler, and not at some point during the
 // function's execution.
 function longPoll (data) {
-  if (transmission_errors > 2) {
+/*  if (transmission_errors > 2) {
     showConnect();
     return;
   }
+*/
 
   if (data && data.rss) {
     rss = data.rss;
@@ -289,7 +290,8 @@ function longPoll (data) {
           if(!CONFIG.focus){
             CONFIG.unread++;
           }
-          addMessage(message.nick, message.text, message.timestamp);
+          addMessage(message.nick + ' (node-' + message.from + ')', message.text,
+                  message.timestamp);
           break;
 
         case "join":
@@ -320,8 +322,8 @@ function longPoll (data) {
          , error: function () {
              addMessage("", "long poll error. trying again...", new Date(), "error");
              transmission_errors += 1;
-             //don't flood the servers on error, wait 10 seconds before retrying
-             setTimeout(longPoll, 10*1000);
+             //don't flood the servers on error, wait 3 seconds before retrying
+             setTimeout(longPoll, 3 * 1000);
            }
          , success: function (data) {
              transmission_errors = 0;
@@ -502,6 +504,6 @@ $(document).ready(function() {
 });
 
 //if we can, notify the server that we're going away.
-$(window).unload(function () {
+$(window).bind('beforeunload', function () {
   jQuery.get("/part", {id: CONFIG.id}, function (data) { }, "json");
 });

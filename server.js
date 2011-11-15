@@ -42,6 +42,7 @@ var channel = new function () {
             m = { nick: nick
                     , type: type // "msg", "join", "part"
                     , text: text
+                    , from: process.env.DOTCLOUD_SERVICE_ID
                     , timestamp: (new Date()).getTime()
             };
             // Emit the new message object to keep the message backlog
@@ -52,7 +53,7 @@ var channel = new function () {
     this.appendMessage = function (message) {
         switch (message.type) {
             case "msg":
-                sys.puts("<" + message.nick + "> " + message.text);
+                sys.puts("<" + message.nick + " (node-" + message.from +  ")> " + message.text);
                 break;
             case "join":
                 sys.puts(message.nick + " join");
@@ -159,7 +160,7 @@ fu.listen(Number(process.env.PORT || PORT), HOST);
 fu.get("/", fu.staticHandler("index.html"));
 fu.get("/style.css", fu.staticHandler("style.css"));
 fu.get("/client.js", fu.staticHandler("client.js"));
-fu.get("/jquery-1.2.6.min.js", fu.staticHandler("jquery-1.2.6.min.js"));
+fu.get("/jquery-1.7.min.js", fu.staticHandler("jquery-1.7.min.js"));
 
 
 fu.get("/who", function (req, res) {
