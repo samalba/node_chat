@@ -16,7 +16,7 @@ var fu = require("./fu"),
     sys = require("sys"),
     url = require("url"),
     qs = require("querystring"),
-    hashlib = require("hashlib");
+    hashlib = require("hashlib"),
     stackio = require("stack.io"),
     redis = require("redis").createClient(
             process.env.DOTCLOUD_REDIS_REDIS_PORT,
@@ -27,64 +27,62 @@ var MESSAGE_BACKLOG = 200,
     SESSION_TIMEOUT = 60 * 1000;
 
 var channel = new function () {
-  var messages = [],
-      callbacks = [];
+    var messages = [],
+        callbacks = [];
 
-  this.appendMessage = function (nick, type, text) {
-    var m = { nick: nick
+    this.appendMessage = function (nick, type, text) {
+        var m = { nick: nick
             , type: type // "msg", "join", "part"
-            , text: text
-            , timestamp: (new Date()).getTime()
-            };
+                , text: text
+                , timestamp: (new Date()).getTime()
+        };
 
-    switch (type) {
-      case "msg":
-        sys.puts("<" + nick + "> " + text);
-        break;
-      case "join":
-        sys.puts(nick + " join");
-        break;
-      case "part":
-        sys.puts(nick + " part");
-        break;
-    }
+        switch (type) {
+            case "msg":
+                sys.puts("<" + nick + "> " + text);
+                break;
+            case "join":
+                sys.puts(nick + " join");
+                break;
+            case "part":
+                sys.puts(nick + " part");
+                break;
+        }
 
-    messages.push( m );
+        messages.push( m );
 
-    while (callbacks.length > 0) {
-      callbacks.shift().callback([m]);
-    }
+        while (callbacks.length > 0) {
+            callbacks.shift().callback([m]);
+        }
 
-    while (messages.length > MESSAGE_BACKLOG)
-      messages.shift();
-  };
+        while (messages.length > MESSAGE_BACKLOG)
+            messages.shift();
+    };
 
-  this.query = function (since, callback) {
-    var matching = [];
-    for (var i = 0; i < messages.length; i++) {
-      var message = messages[i];
-      if (message.timestamp > since)
-        matching.push(message)
-    }
+    this.query = function (since, callback) {
+        var matching = [];
+        for (var i = 0; i < messages.length; i++) {
+            var message = messages[i];
+            if (message.timestamp > since)
+                matching.push(message)
+        }
 
-    if (matching.length != 0) {
-      callback(matching);
-    } else {
-      callbacks.push({ timestamp: new Date(), callback: callback });
-    }
-  };
+        if (matching.length != 0) {
+            callback(matching);
+        } else {
+            callbacks.push({ timestamp: new Date(), callback: callback });
+        }
+    };
 
-  // clear old callbacks
-  // they can hang around for at most 30 seconds.
-  setInterval(function () {
-    var now = new Date();
-    while (callbacks.length > 0 && now - callbacks[0].timestamp > 30*1000) {
-      callbacks.shift().callback([]);
-    }
-  }, 3000);
+    // clear old callbacks
+    // they can hang around for at most 30 seconds.
+    setInterval(function () {
+        var now = new Date();
+        while (callbacks.length > 0 && now - callbacks[0].timestamp > 30*1000) {
+            callbacks.shift().callback([]);
+        }
+    }, 3000);
 };
-
-var sessions = {};
 
 function createSession (nick, callback) {
     if (nick.length > 50)
