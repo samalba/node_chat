@@ -23,6 +23,13 @@ var fu = require("./fu"),
             process.env.DOTCLOUD_REDIS_REDIS_HOST
             );
 
+redis.auth(process.env.DOTCLOUD_REDIS_REDIS_PASSWORD);
+redis.on('error', function (msg) {
+    console.log(msg);
+});
+
+var io = stackio();
+
 var MESSAGE_BACKLOG = 200,
     SESSION_TIMEOUT = 60 * 1000;
 
@@ -30,31 +37,34 @@ var channel = new function () {
     var messages = [],
         callbacks = [];
 
-    this.appendMessage = function (nick, type, text) {
-        var m = { nick: nick
-            , type: type // "msg", "join", "part"
-                , text: text
-                , timestamp: (new Date()).getTime()
-        };
-
-        switch (type) {
-            case "msg":
-                sys.puts("<" + nick + "> " + text);
-                break;
-            case "join":
-                sys.puts(nick + " join");
-                break;
-            case "part":
-                sys.puts(nick + " part");
-                break;
+    this.createMessage = function (nick, type, text) {
+            // If not, let's create it from the arguments
+            m = { nick: nick
+                    , type: type // "msg", "join", "part"
+                    , text: text
+                    , timestamp: (new Date()).getTime()
+            };
+            // Emit the new message object to keep the message backlog
+            // synchronized across the nodes
+            io.emit('chat_message', m);
         }
 
-        messages.push( m );
-
+    this.appendMessage = function (message) {
+        switch (message.type) {
+            case "msg":
+                sys.puts("<" + message.nick + "> " + message.text);
+                break;
+            case "join":
+                sys.puts(message.nick + " join");
+                break;
+            case "part":
+                sys.puts(message.nick + " part");
+                break;
+        }
+        messages.push(message);
         while (callbacks.length > 0) {
             callbacks.shift().callback([m]);
         }
-
         while (messages.length > MESSAGE_BACKLOG)
             messages.shift();
     };
@@ -106,9 +116,9 @@ function createSession (nick, callback) {
 
 function loadSessionObject(session) {
     session.save = function () {
-        var key = 'session_' + session.id);
+        var key = 'session_' + session.id;
         redis.set(key, JSON.stringify(session));
-        redis.ttl(key, SESSION_TIMEOUT);
+        redis.expire(key, SESSION_TIMEOUT);
         return session;
     };
     session.poke = function () {
@@ -117,7 +127,7 @@ function loadSessionObject(session) {
       return session;
     };
     session.destroy = function () {
-      channel.appendMessage(session.nick, 'part');
+      channel.createMessage(session.nick, 'part');
       redis.del('session_' + session.id);
     };
     return session;
@@ -125,8 +135,10 @@ function loadSessionObject(session) {
 
 function getSessionById(id, callback) {
     redis.get('session_' + id, function (err, reply) {
-        if (!reply)
+        if (!reply) {
             callback(null);
+            return;
+        }
         reply = JSON.parse(reply);
         callback(loadSessionObject(reply));
     });
@@ -173,7 +185,7 @@ fu.get("/join", function (req, res) {
             res.simpleJSON(400, {error: "Nick in use"});
             return;
         }
-        channel.appendMessage(session.nick, "join");
+        channel.createMessage(session.nick, "join");
         res.simpleJSON(200, { id: session.id
             , nick: session.nick
             , rss: mem.rss
@@ -220,7 +232,11 @@ fu.get("/send", function (req, res) {
             return;
         }
         session.poke();
-        channel.appendMessage(session.nick, "msg", text);
+        channel.createMessage(session.nick, "msg", text);
         res.simpleJSON(200, { rss: mem.rss });
     });
+});
+
+io.on('chat_message', function (message) {
+    channel.appendMessage(message);
 });
