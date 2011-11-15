@@ -1,6 +1,7 @@
 HOST = null; // localhost
 PORT = 8001;
 
+
 // when the daemon started
 var starttime = (new Date()).getTime();
 
@@ -14,7 +15,13 @@ setInterval(function () {
 var fu = require("./fu"),
     sys = require("sys"),
     url = require("url"),
-    qs = require("querystring");
+    qs = require("querystring"),
+    hashlib = require("hashlib");
+    stackio = require("stack.io"),
+    redis = require("redis").createClient(
+            process.env.DOTCLOUD_REDIS_REDIS_PORT,
+            process.env.DOTCLOUD_REDIS_REDIS_HOST
+            );
 
 var MESSAGE_BACKLOG = 200,
     SESSION_TIMEOUT = 60 * 1000;
@@ -79,46 +86,63 @@ var channel = new function () {
 
 var sessions = {};
 
-function createSession (nick) {
-  if (nick.length > 50) return null;
-  if (/[^\w_\-^!]/.exec(nick)) return null;
+function createSession (nick, callback) {
+    if (nick.length > 50)
+        return callback(null);
+    if (/[^\w_\-^!]/.exec(nick))
+        return callback(null);
 
-  for (var i in sessions) {
-    var session = sessions[i];
-    if (session && session.nick === nick) return null;
-  }
-
-  var session = { 
-    nick: nick, 
-    id: Math.floor(Math.random()*99999999999).toString(),
-    timestamp: new Date(),
-
-    poke: function () {
-      session.timestamp = new Date();
-    },
-
-    destroy: function () {
-      channel.appendMessage(session.nick, "part");
-      delete sessions[session.id];
-    }
-  };
-
-  sessions[session.id] = session;
-  return session;
+    sessionExists(nick, function (exists) {
+        if (exists)
+            callback(null);
+        else {
+            var session = loadSessionObject({
+                nick: nick,
+                id: hashlib.md5(nick),
+                timestamp: new Date(),
+            }).save();
+            callback(session);
+        }
+    });
 }
 
-// interval to kill off old sessions
-setInterval(function () {
-  var now = new Date();
-  for (var id in sessions) {
-    if (!sessions.hasOwnProperty(id)) continue;
-    var session = sessions[id];
+function loadSessionObject(session) {
+    session.save = function () {
+        var key = 'session_' + session.id);
+        redis.set(key, JSON.stringify(session));
+        redis.ttl(key, SESSION_TIMEOUT);
+        return session;
+    };
+    session.poke = function () {
+      session.timestamp = new Date();
+      session.save();
+      return session;
+    };
+    session.destroy = function () {
+      channel.appendMessage(session.nick, 'part');
+      redis.del('session_' + session.id);
+    };
+    return session;
+}
 
-    if (now - session.timestamp > SESSION_TIMEOUT) {
-      session.destroy();
-    }
-  }
-}, 1000);
+function getSessionById(id, callback) {
+    redis.get('session_' + id, function (err, reply) {
+        if (!reply)
+            callback(null);
+        reply = JSON.parse(reply);
+        callback(loadSessionObject(reply));
+    });
+}
+
+function getSessionByNick(nick, callback) {
+    return getSessionById(hashlib.md5(nick), callback);
+}
+
+function sessionExists(nick, callback) {
+    redis.exists('session_' + hashlib.md5(nick), function (err, exists) {
+        callback(exists);
+    });
+}
 
 fu.listen(Number(process.env.PORT || PORT), HOST);
 
@@ -129,81 +153,76 @@ fu.get("/jquery-1.2.6.min.js", fu.staticHandler("jquery-1.2.6.min.js"));
 
 
 fu.get("/who", function (req, res) {
-  var nicks = [];
-  for (var id in sessions) {
-    if (!sessions.hasOwnProperty(id)) continue;
-    var session = sessions[id];
-    nicks.push(session.nick);
-  }
-  res.simpleJSON(200, { nicks: nicks
-                      , rss: mem.rss
-                      });
+    var nicks = [];
+    redis.keys('session_*', function (err, replies) {
+        redis.mget(replies, function (err, reply) {
+            var session = JSON.parse(reply);
+            nicks.push(session.nick);
+            if (nicks.length == replies.length)
+                res.simpleJSON(200, { nicks: nicks, rss: mem.rss});
+        });
+    });
 });
 
 fu.get("/join", function (req, res) {
-  var nick = qs.parse(url.parse(req.url).query).nick;
-  if (nick == null || nick.length == 0) {
-    res.simpleJSON(400, {error: "Bad nick."});
-    return;
-  }
-  var session = createSession(nick);
-  if (session == null) {
-    res.simpleJSON(400, {error: "Nick in use"});
-    return;
-  }
-
-  //sys.puts("connection: " + nick + "@" + res.connection.remoteAddress);
-
-  channel.appendMessage(session.nick, "join");
-  res.simpleJSON(200, { id: session.id
-                      , nick: session.nick
-                      , rss: mem.rss
-                      , starttime: starttime
-                      });
+    var nick = qs.parse(url.parse(req.url).query).nick;
+    if (nick == null || nick.length == 0) {
+        res.simpleJSON(400, {error: "Bad nick."});
+        return;
+    }
+    createSession(nick, function (session) {
+        if (session === null) {
+            res.simpleJSON(400, {error: "Nick in use"});
+            return;
+        }
+        channel.appendMessage(session.nick, "join");
+        res.simpleJSON(200, { id: session.id
+            , nick: session.nick
+            , rss: mem.rss
+            , starttime: starttime
+        });
+    });
 });
 
 fu.get("/part", function (req, res) {
-  var id = qs.parse(url.parse(req.url).query).id;
-  var session;
-  if (id && sessions[id]) {
-    session = sessions[id];
-    session.destroy();
-  }
-  res.simpleJSON(200, { rss: mem.rss });
+    var id = qs.parse(url.parse(req.url).query).id;
+    getSessionByNick(nick, function (session) {
+        if (session !== null)
+            session.destroy();
+        res.simpleJSON(200, { rss: mem.rss });
+    });
 });
 
 fu.get("/recv", function (req, res) {
-  if (!qs.parse(url.parse(req.url).query).since) {
-    res.simpleJSON(400, { error: "Must supply since parameter" });
-    return;
-  }
-  var id = qs.parse(url.parse(req.url).query).id;
-  var session;
-  if (id && sessions[id]) {
-    session = sessions[id];
-    session.poke();
-  }
-
-  var since = parseInt(qs.parse(url.parse(req.url).query).since, 10);
-
-  channel.query(since, function (messages) {
-    if (session) session.poke();
-    res.simpleJSON(200, { messages: messages, rss: mem.rss });
-  });
+    if (!qs.parse(url.parse(req.url).query).since) {
+        res.simpleJSON(400, { error: "Must supply since parameter" });
+        return;
+    }
+    var id = qs.parse(url.parse(req.url).query).id;
+    getSessionById(id, function (session) {
+        if (session === null) {
+            res.simpleJSON(400, { error: "No such session id" });
+            return;
+        }
+        session.poke();
+        var since = parseInt(qs.parse(url.parse(req.url).query).since, 10);
+        channel.query(since, function (messages) {
+            session.poke();
+            res.simpleJSON(200, { messages: messages, rss: mem.rss });
+        });
+    });
 });
 
 fu.get("/send", function (req, res) {
-  var id = qs.parse(url.parse(req.url).query).id;
-  var text = qs.parse(url.parse(req.url).query).text;
-
-  var session = sessions[id];
-  if (!session || !text) {
-    res.simpleJSON(400, { error: "No such session id" });
-    return;
-  }
-
-  session.poke();
-
-  channel.appendMessage(session.nick, "msg", text);
-  res.simpleJSON(200, { rss: mem.rss });
+    var id = qs.parse(url.parse(req.url).query).id;
+    var text = qs.parse(url.parse(req.url).query).text;
+    getSessionById(id, function (session) {
+        if (!session || !text) {
+            res.simpleJSON(400, { error: "No such session id" });
+            return;
+        }
+        session.poke();
+        channel.appendMessage(session.nick, "msg", text);
+        res.simpleJSON(200, { rss: mem.rss });
+    });
 });
