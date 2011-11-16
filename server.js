@@ -6,6 +6,7 @@ PORT = 8001;
 var starttime = (new Date()).getTime();
 
 var mem = process.memoryUsage();
+var loc = 'node-' + process.env.DOTCLOUD_SERVICE_ID;
 // every 10 seconds poll for the memory.
 setInterval(function () {
   mem = process.memoryUsage();
@@ -183,7 +184,7 @@ fu.get("/who", function (req, res) {
                 var session = JSON.parse(replies[i]);
                 nicks.push(session.nick);
             }
-            res.simpleJSON(200, { nicks: nicks, rss: mem.rss});
+            res.simpleJSON(200, { nicks: nicks, rss: mem.rss, location: loc});
         });
     });
 });
@@ -203,6 +204,7 @@ fu.get("/join", function (req, res) {
         res.simpleJSON(200, { id: session.id
             , nick: session.nick
             , rss: mem.rss
+            , location: loc
             , starttime: starttime
         });
     });
@@ -213,7 +215,7 @@ fu.get("/part", function (req, res) {
     getSessionById(id, function (session) {
         if (session)
             session.destroy();
-        res.simpleJSON(200, { rss: mem.rss });
+        res.simpleJSON(200, { rss: mem.rss, location: loc });
     });
 });
 
@@ -232,7 +234,7 @@ fu.get("/recv", function (req, res) {
         session.poke();
         channel.query(since, function (messages) {
             session.poke();
-            res.simpleJSON(200, { messages: messages, rss: mem.rss });
+            res.simpleJSON(200, { messages: messages, rss: mem.rss, location: loc });
         });
     });
 });
@@ -247,7 +249,7 @@ fu.get("/send", function (req, res) {
         }
         session.poke();
         channel.createMessage(session.nick, "msg", text);
-        res.simpleJSON(200, { rss: mem.rss });
+        res.simpleJSON(200, { rss: mem.rss, location: loc });
     });
 });
 

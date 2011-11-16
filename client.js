@@ -248,6 +248,12 @@ function updateRSS () {
   }
 }
 
+function updateLocation () {
+    if (!loc)
+        return;
+    $("#location").text(loc);
+}
+
 function updateUptime () {
   if (starttime) {
     $("#uptime").text(starttime.toRelativeTime());
@@ -270,10 +276,16 @@ function longPoll (data) {
   }
 */
 
-  if (data && data.rss) {
-    rss = data.rss;
-    updateRSS();
-  }
+    if (data) {
+        if (data.rss) {
+            rss = data.rss;
+            updateRSS();
+        }
+        if (data.location) {
+            loc = data.location;
+            updateLocation();
+        }
+    }
 
   //process any updates we may have
   //data will be null on the first call of longPoll
@@ -385,6 +397,7 @@ function updateTitle(){
 var starttime;
 // daemon memory usage
 var rss;
+var loc;
 
 //handle the server's response to our nickname and join request
 function onConnect (session) {
