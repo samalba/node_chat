@@ -263,7 +263,8 @@ var first_poll = true;
 // is being made from the response handler, and not at some point during the
 // function's execution.
 function longPoll (data) {
-/*  if (transmission_errors > 2) {
+/*
+   if (transmission_errors > 2) {
     showConnect();
     return;
   }
@@ -320,7 +321,6 @@ function longPoll (data) {
          , dataType: "json"
          , data: { since: CONFIG.last_message_time, id: CONFIG.id }
          , error: function () {
-             addMessage("", "long poll error. trying again...", new Date(), "error");
              transmission_errors += 1;
              //don't flood the servers on error, wait 3 seconds before retrying
              setTimeout(longPoll, 3 * 1000);
@@ -430,6 +430,7 @@ function who () {
     if (status != "success") return;
     nicks = data.nicks;
     outputUsers();
+    updateUsersLink();
   }, "json");
 }
 
@@ -471,8 +472,8 @@ $(document).ready(function() {
            , dataType: "json"
            , url: "/join"
            , data: { nick: nick }
-           , error: function () {
-               alert("error connecting to server");
+           , error: function (data) {
+               alert("Error connecting to server, maybe your nick is already in use.");
                showConnect();
              }
            , success: onConnect
@@ -505,5 +506,11 @@ $(document).ready(function() {
 
 //if we can, notify the server that we're going away.
 $(window).bind('beforeunload', function () {
-  jQuery.get("/part", {id: CONFIG.id}, function (data) { }, "json");
+    if (!CONFIG.id)
+        return;
+    $.ajax({
+        url: "/part?id=" + CONFIG.id,
+        async: false,
+        cache: false
+    });
 });

@@ -28,27 +28,35 @@ redis.on('error', function (msg) {
     console.log(msg);
 });
 
+var sessionSecret = null;
+redis.multi()
+    .setnx('sessionsecret', randomId(32))
+    .get('sessionsecret')
+    .exec(function (err, replies) {
+        sessionSecret = replies[0];
+    });
+
 var io = stackio();
 
 var MESSAGE_BACKLOG = 200,
-    SESSION_TIMEOUT = 60 * 1000;
+    SESSION_TIMEOUT = 60; // 1 minute
 
 var channel = new function () {
     var messages = [],
         callbacks = [];
 
     this.createMessage = function (nick, type, text) {
-            // If not, let's create it from the arguments
-            m = { nick: nick
-                    , type: type // "msg", "join", "part"
-                    , text: text
-                    , from: process.env.DOTCLOUD_SERVICE_ID
-                    , timestamp: (new Date()).getTime()
-            };
-            // Emit the new message object to keep the message backlog
-            // synchronized across the nodes
-            io.emit('chat_message', m);
-        }
+        var message = {
+                nick: nick
+                , type: type // "msg", "join", "part"
+                , text: text
+                , from: process.env.DOTCLOUD_SERVICE_ID
+                , timestamp: (new Date()).getTime()
+        };
+        // Emit the new message object to keep the message backlog
+        // synchronized across the nodes
+        io.emit('chat_message', message);
+    };
 
     this.appendMessage = function (message) {
         switch (message.type) {
@@ -64,7 +72,7 @@ var channel = new function () {
         }
         messages.push(message);
         while (callbacks.length > 0) {
-            callbacks.shift().callback([m]);
+            callbacks.shift().callback([message]);
         }
         while (messages.length > MESSAGE_BACKLOG)
             messages.shift();
@@ -107,7 +115,7 @@ function createSession (nick, callback) {
         else {
             var session = loadSessionObject({
                 nick: nick,
-                id: hashlib.md5(nick),
+                id: hashlib.md5(sessionSecret + ':' + nick),
                 timestamp: new Date(),
             }).save();
             callback(session);
@@ -123,13 +131,17 @@ function loadSessionObject(session) {
         return session;
     };
     session.poke = function () {
-      session.timestamp = new Date();
-      session.save();
-      return session;
+        redis.exists('session_' + session.id, function (err, exists) {
+            if (!exists)
+                return; // session does not exists anymore
+            session.timestamp = new Date();
+            session.save();
+        });
+        return session;
     };
     session.destroy = function () {
-      channel.createMessage(session.nick, 'part');
-      redis.del('session_' + session.id);
+        channel.createMessage(session.nick, 'part');
+        redis.del('session_' + session.id);
     };
     return session;
 }
@@ -146,11 +158,11 @@ function getSessionById(id, callback) {
 }
 
 function getSessionByNick(nick, callback) {
-    return getSessionById(hashlib.md5(nick), callback);
+    return getSessionById(hashlib.md5(sessionSecret + ':' + nick), callback);
 }
 
 function sessionExists(nick, callback) {
-    redis.exists('session_' + hashlib.md5(nick), function (err, exists) {
+    redis.exists('session_' + hashlib.md5(sessionSecret + ':' + nick), function (err, exists) {
         callback(exists);
     });
 }
@@ -166,11 +178,12 @@ fu.get("/jquery-1.7.min.js", fu.staticHandler("jquery-1.7.min.js"));
 fu.get("/who", function (req, res) {
     var nicks = [];
     redis.keys('session_*', function (err, replies) {
-        redis.mget(replies, function (err, reply) {
-            var session = JSON.parse(reply);
-            nicks.push(session.nick);
-            if (nicks.length == replies.length)
-                res.simpleJSON(200, { nicks: nicks, rss: mem.rss});
+        redis.mget(replies, function (err, replies) {
+            for (i in replies) {
+                var session = JSON.parse(replies[i]);
+                nicks.push(session.nick);
+            }
+            res.simpleJSON(200, { nicks: nicks, rss: mem.rss});
         });
     });
 });
@@ -197,8 +210,8 @@ fu.get("/join", function (req, res) {
 
 fu.get("/part", function (req, res) {
     var id = qs.parse(url.parse(req.url).query).id;
-    getSessionByNick(nick, function (session) {
-        if (session !== null)
+    getSessionById(id, function (session) {
+        if (session)
             session.destroy();
         res.simpleJSON(200, { rss: mem.rss });
     });
@@ -210,13 +223,13 @@ fu.get("/recv", function (req, res) {
         return;
     }
     var id = qs.parse(url.parse(req.url).query).id;
+    var since = parseInt(qs.parse(url.parse(req.url).query).since, 10);
     getSessionById(id, function (session) {
         if (session === null) {
             res.simpleJSON(400, { error: "No such session id" });
             return;
         }
         session.poke();
-        var since = parseInt(qs.parse(url.parse(req.url).query).since, 10);
         channel.query(since, function (messages) {
             session.poke();
             res.simpleJSON(200, { messages: messages, rss: mem.rss });
@@ -241,3 +254,26 @@ fu.get("/send", function (req, res) {
 io.on('chat_message', function (message) {
     channel.appendMessage(message);
 });
+
+function randomId(length) {
+    var callbacks = [
+        function() {
+            //48 - 57 ('0' - '9')
+            return ((Math.round(Math.random() * 101)) % 10) + 48;
+        },
+        function() {
+            //65 - 90 ('A' - 'Z')
+            return ((Math.round(Math.random() * 101)) % 26) + 65;
+        },
+        function() {
+            //97 - 122 ('a' - 'z')
+            return ((Math.round(Math.random() * 1001)) % 26) + 97;
+        }
+    ];
+    var result = '';
+    for (var i = 0; i < length; i++) {
+        var choice = Math.round(((Math.random() * 11) % (callbacks.length - 1)));
+        result += String.fromCharCode(callbacks[choice]());
+    }
+    return result;
+}
