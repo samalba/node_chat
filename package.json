@@ -1,0 +1,17 @@
+{
+    "name": "node_chat",
+    "description": "A scalable version of Ryan Dahl's node_chat",
+    "author": "Samuel Alba <sam@dotcloud.com>",
+    "version": "0.0.1",
+    "bin": {
+        "node_chat": "./node_chat"
+    },
+    "dependencies": {
+        "redis": "0.6.x",
+        "stack.io": "0.1.x",
+        "hashlib": "1.0.x"
+    },
+    "engines": {
+        "node": ">= 0.4.0"
+    }
+}

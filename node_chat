@@ -1,0 +1,5 @@
+#!/bin/sh
+
+echo cd $(dirname $0)
+export PORT=$PORT_WWW
+exec node server.js
