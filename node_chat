@@ -1,5 +1,9 @@
 #!/bin/sh
 
-echo cd $(dirname $0)
+if [ -L "$0" ] ; then
+    cd $(dirname $(readlink $0))
+else
+    cd $(dirname $0)
+fi
 export PORT=$PORT_WWW
 exec node server.js
