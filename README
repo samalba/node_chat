@@ -1,4 +1,7 @@
-Demo for node.js http://tinyclouds.org/node
+Scalable version of node_chat forked from https://github.com/ry/node_chat
 
-to run
-$ /usr/local/bin/node server.js
+To run:
+$ npm install node_chat -g
+$ node_chat
+
+Make sure you have a redis-server up and running.

@@ -3,6 +3,16 @@
     "description": "A scalable version of Ryan Dahl's node_chat",
     "author": "Samuel Alba <sam@dotcloud.com>",
     "version": "0.0.1",
+    "keywords" : [
+        "nodejs",
+        "node_chat",
+        "distributed",
+        "chat"
+    ],
+    "repository" : {
+        "type" : "git",
+        "url" : "http://github.com/samalba/node_chat.git"
+    },
     "bin": {
         "node_chat": "./node_chat"
     },
