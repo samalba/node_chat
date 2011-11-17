@@ -1,9 +1,12 @@
 #!/bin/sh
 
 if [ -L "$0" ] ; then
-    cd $(dirname $(readlink $0))
+    location=$(dirname $(readlink $0))
+    cd $(dirname $0)
+    cd $location
 else
     cd $(dirname $0)
 fi
+
 export PORT=$PORT_WWW
 exec node server.js
