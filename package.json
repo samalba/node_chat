@@ -2,7 +2,7 @@
     "name": "node_chat",
     "description": "A scalable version of Ryan Dahl's node_chat",
     "author": "Samuel Alba <sam@dotcloud.com>",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "preferGlobal": true,
     "keywords" : [
         "nodejs",
