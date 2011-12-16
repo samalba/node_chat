@@ -37,7 +37,7 @@ redis.multi()
         sessionSecret = replies[0];
     });
 
-var io = stackio();
+var io = stackio({'transport': process.env.DOTCLOUD_REDIS_REDIS_URL});
 
 var MESSAGE_BACKLOG = 200,
     SESSION_TIMEOUT = 60; // 1 minute
