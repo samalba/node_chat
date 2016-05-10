@@ -14,7 +14,7 @@ setInterval(function () {
 
 
 var fu = require("./fu"),
-    sys = require("sys"),
+    util = require('util'),
     url = require("url"),
     qs = require("querystring"),
     hashlib = require("hashlib"),
@@ -62,13 +62,13 @@ var channel = new function () {
     this.appendMessage = function (message) {
         switch (message.type) {
             case "msg":
-                sys.puts("<" + message.nick + " (node-" + message.from +  ")> " + message.text);
+                util.puts("<" + message.nick + " (node-" + message.from +  ")> " + message.text);
                 break;
             case "join":
-                sys.puts(message.nick + " join");
+                util.puts(message.nick + " join");
                 break;
             case "part":
-                sys.puts(message.nick + " part");
+                util.puts(message.nick + " part");
                 break;
         }
         messages.push(message);
